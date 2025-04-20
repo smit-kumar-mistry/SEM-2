@@ -1,27 +1,81 @@
-# Library Management System with Gemini API for Recommendations
+# Library Management System with Fallback Recommendations
 import os
 import json
 import datetime
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 from PIL import Image, ImageTk
-import google.generativeai as genai
+import random
 from datetime import timedelta
+
+# Try to import Gemini API, but have fallback if it's not available
+try:
+    import google.generativeai as genai
+    GEMINI_AVAILABLE = True
+except ImportError:
+    GEMINI_AVAILABLE = False
 
 # Configuration
 DATA_DIR = "library_data"
 USERS_FILE = os.path.join(DATA_DIR, "users.json")
-BOOKS_FILE = os.path.join(DATA_DIR, "books.json")   
+BOOKS_FILE = os.path.join(DATA_DIR, "books.json")
 ISSUES_FILE = os.path.join(DATA_DIR, "issues.json")
 PROFILE_DIR = os.path.join(DATA_DIR, "profiles")
 
-# Gemini API configuration - replace with your own key
+# Configure Gemini API if available
 GEMINI_API_KEY = "AIzaSyAFLVcrKqEnw6RN5cw5sQ1MusOxTySCCqU"
-genai.configure(api_key=GEMINI_API_KEY)
+if GEMINI_AVAILABLE:
+    try:
+        genai.configure(api_key=GEMINI_API_KEY)
+    except Exception as e:
+        print(f"Error configuring Gemini API: {e}")
+        GEMINI_AVAILABLE = False
 
 # Initialize data directory
 os.makedirs(DATA_DIR, exist_ok=True)
 os.makedirs(PROFILE_DIR, exist_ok=True)
+
+# Sample book recommendations based on mood
+MOOD_RECOMMENDATIONS = {
+    "happy": [
+        {"title": "The Happiness Project", "author": "Gretchen Rubin"},
+        {"title": "Born a Crime", "author": "Trevor Noah"},
+        {"title": "The House in the Cerulean Sea", "author": "TJ Klune"}
+    ],
+    "sad": [
+        {"title": "When Things Fall Apart", "author": "Pema Chödrön"},
+        {"title": "Man's Search for Meaning", "author": "Viktor E. Frankl"},
+        {"title": "The Boy, the Mole, the Fox and the Horse", "author": "Charlie Mackesy"}
+    ],
+    "anxious": [
+        {"title": "Dare", "author": "Barry McDonagh"},
+        {"title": "The Worry Trick", "author": "David Carbonell"},
+        {"title": "Hope and Help for Your Nerves", "author": "Claire Weekes"}
+    ],
+    "bored": [
+        {"title": "Ready Player One", "author": "Ernest Cline"},
+        {"title": "The Night Circus", "author": "Erin Morgenstern"},
+        {"title": "Dark Matter", "author": "Blake Crouch"}
+    ],
+    "inspired": [
+        {"title": "Atomic Habits", "author": "James Clear"},
+        {"title": "Educated", "author": "Tara Westover"},
+        {"title": "Becoming", "author": "Michelle Obama"}
+    ],
+    "relaxed": [
+        {"title": "The Thursday Murder Club", "author": "Richard Osman"},
+        {"title": "The Midnight Library", "author": "Matt Haig"},
+        {"title": "Project Hail Mary", "author": "Andy Weir"}
+    ]
+}
+
+# Sample book information database
+BOOK_INFO = {
+    "To Kill a Mockingbird": "A powerful story about racial injustice in the American South during the 1930s, told through the eyes of a young girl named Scout Finch. Her father, lawyer Atticus Finch, defends a Black man falsely accused of raping a white woman. The novel explores themes of moral growth, compassion, and justice.",
+    "1984": "George Orwell's dystopian classic depicts a totalitarian society where the government, led by Big Brother, controls every aspect of citizens' lives including their thoughts. The protagonist Winston Smith rebels by keeping a diary and falling in love. The novel introduced concepts like 'thoughtcrime,' 'doublethink,' and 'Newspeak' that remain relevant in discussions about surveillance and authoritarianism.",
+    "Pride and Prejudice": "Jane Austen's beloved novel follows Elizabeth Bennet as she navigates issues of manners, upbringing, and marriage in 19th-century England. When she meets the wealthy, proud Mr. Darcy, their mutual prejudices create a series of misunderstandings before they eventually overcome their pride to find love and understanding.",
+    "The Hobbit": "J.R.R. Tolkien's fantasy adventure follows Bilbo Baggins, a comfort-loving hobbit who reluctantly joins a quest with thirteen dwarves to reclaim their mountain home from the dragon Smaug. Throughout his journey, Bilbo discovers courage, wisdom, and a magical ring that will later become central to 'The Lord of the Rings'."
+}
 
 # Initialize data files if they don't exist
 def initialize_data():
@@ -56,25 +110,79 @@ def save_data(data, file_path):
     with open(file_path, 'w') as f:
         json.dump(data, f)
 
-# AI Recommendation using Gemini
+# Book recommendations (with fallback if AI not available)
 def get_book_recommendations(mood):
-    try:
-        model = genai.GenerativeModel('gemini-1.0-pro')
-        prompt = f"I'm feeling {mood}. Recommend 3 books that would suit my mood. For each book, provide just the title and author."
-        response = model.generate_content(prompt)
-        return response.text
-    except Exception as e:
-        return f"Could not get recommendations: {str(e)}"
+    # Try to use Gemini if available
+    if GEMINI_AVAILABLE:
+        try:
+            # Try different model names that might be available
+            model_names = ['gemini-pro', 'gemini-1.5-pro', 'models/gemini-pro']
+            
+            for model_name in model_names:
+                try:
+                    model = genai.GenerativeModel(model_name)
+                    prompt = f"I'm feeling {mood}. Recommend 3 books that would suit my mood. For each book, provide just the title and author."
+                    response = model.generate_content(prompt)
+                    return response.text
+                except Exception as e:
+                    print(f"Failed with model {model_name}: {e}")
+                    continue
+        except Exception as e:
+            print(f"Error using Gemini API: {e}")
+    
+    # Fallback recommendation system
+    mood = mood.lower()
+    
+    # Check if we have recommendations for this specific mood
+    if mood in MOOD_RECOMMENDATIONS:
+        books = MOOD_RECOMMENDATIONS[mood]
+    else:
+        # Find most similar mood or pick random mood
+        all_moods = list(MOOD_RECOMMENDATIONS.keys())
+        for known_mood in all_moods:
+            if known_mood in mood or mood in known_mood:
+                books = MOOD_RECOMMENDATIONS[known_mood]
+                break
+        else:
+            # If no match, pick random mood
+            random_mood = random.choice(all_moods)
+            books = MOOD_RECOMMENDATIONS[random_mood]
+    
+    # Format the recommendations
+    recommendations = f"Based on your mood '{mood}', here are some recommendations:\n\n"
+    for i, book in enumerate(books, 1):
+        recommendations += f"{i}. '{book['title']}' by {book['author']}\n"
+    
+    return recommendations
 
-# Book information using Gemini
+# Book information (with fallback if AI not available)
 def get_book_info(title):
-    try:
-        model = genai.GenerativeModel('gemini-1.0-pro')
-        prompt = f"Give me a brief summary and key information about the book '{title}'. Keep it to 100 words."
-        response = model.generate_content(prompt)
-        return response.text
-    except Exception as e:
-        return f"Could not fetch information: {str(e)}"
+    # Try to use Gemini if available
+    if GEMINI_AVAILABLE:
+        try:
+            # Try different model names that might be available
+            model_names = ['gemini-pro', 'gemini-1.5-pro', 'models/gemini-pro']
+            
+            for model_name in model_names:
+                try:
+                    model = genai.GenerativeModel(model_name)
+                    prompt = f"Give me a brief summary and key information about the book '{title}'. Keep it to 100 words."
+                    response = model.generate_content(prompt)
+                    return response.text
+                except Exception as e:
+                    print(f"Failed with model {model_name}: {e}")
+                    continue
+        except Exception as e:
+            print(f"Error using Gemini API: {e}")
+    
+    # Fallback information system
+    # Check if we have info for this specific title
+    for book_title, info in BOOK_INFO.items():
+        if title.lower() in book_title.lower() or book_title.lower() in title.lower():
+            return info
+    
+    # If not found, provide generic response
+    return f"Information about '{title}' is not available in our local database. This book might be newer or less well-known. Consider checking online resources like Goodreads or Google Books for more information."
 
 # Calculate fine amount
 def calculate_fine(return_date, due_date):
